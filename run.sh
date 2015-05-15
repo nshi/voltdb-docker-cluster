@@ -2,33 +2,37 @@
 if [ -z "$VOLT_ACTION" ]; then
 VOLT_ACTION="create"
 fi
-#if [ $VOLT_ACTION == "create" ]; then
-#CATALOG="catalog.jar"
-#fi
 function start() {
 : ${PREFIX?"Need to set PREFIX"}
 : ${VOLTPATH?"Need to set VOLTPATH"}
 : ${HOSTCOUNT?"Need to set HOSTCOUNT"}
+# Build deployment files (deployment.xml and producer_dr_[en/dis]able.xml
 if ([ -z "$DEPLOY" ] && ([ "$CLUSTER_ID" ] || [ "$K_FACTOR" ] || [ "$SITES_PER_HOST" ] || [ "$DR_LISTEN" ])); then
-  if [ -z "$CLUSTER_ID" ]; then CLUSTER_ID="1"; fi
   if [ -z "$SITES_PER_HOST" ]; then SITES_PER_HOST="2"; fi
   if [ -z "$K_FACTOR" ]; then K_FACTOR="0"; fi
   if [ -z "$DR_LISTEN" ]; then DR_LISTEN="false"; fi
-  if [ -z "$DR_PRODUCER_HOST" ]; then DR_SOURCE=""; else DR_SOURCE='<connection source="'$DR_PRODUCER_HOST'"/>'; fi
+  if [ -z "$DR_PRODUCER_HOST" ]; then
+    if [ -z "$CLUSTER_ID" ]; then CLUSTER_ID="1"; fi
+    DR_SOURCE=""
+  else
+    if [ -z "$CLUSTER_ID" ]; then CLUSTER_ID="2"; fi
+    DR_SOURCE='<connection source="'$DR_PRODUCER_HOST'"/>'; DR_LISTEN="false"
+  fi
   if ( HOSTCOUNT=="2" ); then DISABLEPD='<partition-detection enabled="false"/>'; else DISABLEPD=''; fi
   if ([ -z "$CATALOG" ]); then SCHEMA="ddl"; else SCHEMA="catalog"; fi
   echo '<deployment><cluster hostcount="'$HOSTCOUNT'" sitesperhost="'$SITES_PER_HOST'" kfactor="'$K_FACTOR'" schema="'$SCHEMA'"/>'$DISABLEPD'<httpd enabled="true"><jsonapi enabled="true"/></httpd><dr id="'$CLUSTER_ID'" listen="'$DR_LISTEN'">'$DR_SOURCE'</dr></deployment>' > $VOLTPATH/DOCKER/$PREFIX/deployment.xml
-  if [ -z "$DR_PRODUCER" ]; then
-    $DR_LISTEN = "true"
+  if [ DR_LISTEN=='false' ]; then
+    DR_LISTEN="true"
     echo '<deployment><cluster hostcount="'$HOSTCOUNT'" sitesperhost="'$SITES_PER_HOST'" kfactor="'$K_FACTOR'" schema="'$SCHEMA'"/>'$DISABLEPD'<httpd enabled="true"><jsonapi enabled="true"/></httpd><dr id="'$CLUSTER_ID'" listen="'$DR_LISTEN'">'$DR_SOURCE'</dr></deployment>' > $VOLTPATH/DOCKER/$PREFIX/producer_dr_enable.xml
   else
-    $DR_LISTEN = "false"
+    DR_LISTEN="false"
     echo '<deployment><cluster hostcount="'$HOSTCOUNT'" sitesperhost="'$SITES_PER_HOST'" kfactor="'$K_FACTOR'" schema="'$SCHEMA'"/>'$DISABLEPD'<httpd enabled="true"><jsonapi enabled="true"/></httpd><dr id="'$CLUSTER_ID'" listen="'$DR_LISTEN'">'$DR_SOURCE'</dr></deployment>' > $VOLTPATH/DOCKER/$PREFIX/producer_dr_disable.xml
   fi
   DEPLOY="${VOLTPATH}/DOCKER/${PREFIX}/deployment.xml"
 else
 : ${DEPLOY?"Need to set DEPLOY"}
 fi
+#Include catalog option if specified
 if ([ -z "$CATALOG" ]); then
   CATALOG_OPTION=""
 else
@@ -65,9 +69,24 @@ stop $NAME
 if [ -z "$LEADER_NAME" ]; then
 LEADER_NAME=$NAME
 fi
+# Create docker volumes for this server
 if [ $VOLT_ACTION == "create" ]; then
-  sudo rm -r $VOLTPATH/DOCKER/$PREFIX/$NAME/log/ 
-  sudo rm -r $VOLTPATH/DOCKER/$PREFIX/$NAME/voltdbroot/ 
+  sudo rm -r $VOLTPATH/DOCKER/$PREFIX/$NAME/log/
+  sudo rm -r $VOLTPATH/DOCKER/$PREFIX/$NAME/voltdbroot/
+  sudo mkdir $VOLTPATH/DOCKER/$PREFIX/$NAME/log/
+  sudo mkdir $VOLTPATH/DOCKER/$PREFIX/$NAME/voltdbroot/ 
+  sudo chmod 777 $VOLTPATH/DOCKER/$PREFIX/$NAME/log/
+  sudo chmod 777 $VOLTPATH/DOCKER/$PREFIX/$NAME/voltdbroot/
+  # Provide a share directory that all servers have visibility to
+  if [ ! -d "$VOLTPATH/DOCKER/SHARE" ]; then
+    sudo mkdir $VOLTPATH/DOCKER/SHARE/
+    sudo chmod 777 $VOLTPATH/DOCKER/SHARE/
+  fi
+  # Provide a server local directory that all other servers have visibility to
+  if [ ! -d "$VOLTPATH/DOCKER/SHARE/$NAME" ]; then
+    sudo mkdir $VOLTPATH/DOCKER/SHARE/$NAME/
+    sudo chmod 777 $VOLTPATH/DOCKER/SHARE/$NAME/
+  fi
 fi
 LINK_ARG=""
 IFS=' ' read -a links <<< "$LINKS"
@@ -75,7 +94,8 @@ for l in "${links[@]}"
 do
 LINK_ARG="$LINK_ARG --link $l:$l"
 done
-docker run -d -P -h $NAME $LINK_ARG $DOCKER_ENV -v $VOLTPATH:/opt/voltdb -v $VOLTPATH/DOCKER/$PREFIX/$NAME:/tmp/voltdbroot --name $NAME nshi/voltdb-cluster \
+# Start docker
+docker run -d -P -h $NAME $LINK_ARG $DOCKER_ENV -v $VOLTPATH:/opt/voltdb -v $VOLTPATH/DOCKER/$PREFIX/$NAME:/tmp/voltdbroot -v $VOLTPATH/DOCKER/SHARE:/tmp/share -v $VOLTPATH/DOCKER/SHARE/$NAME:/tmp/sharelocal --name $NAME nshi/voltdb-cluster \
 sh -c "cd /tmp/voltdbroot;voltdb $VOLT_ACTION $CATALOG_OPTION -H $LEADER_NAME -l /opt/voltdb/voltdb/license.xml -d /opt/voltdb/$DEPLOY $VOLT_ARGS"
 echo
 echo "IP of $NAME:" `docker inspect --format='{{.NetworkSettings.IPAddress}}' $(docker ps -a | grep -e "\s$NAME" | awk '{ print $1 }')`
