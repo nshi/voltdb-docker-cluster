@@ -6,8 +6,12 @@ function start() {
 : ${PREFIX?"Need to set PREFIX"}
 : ${VOLTPATH?"Need to set VOLTPATH"}
 : ${HOSTCOUNT?"Need to set HOSTCOUNT"}
+# Get user and group of VOLTPATH
+USER=`ls -ld $VOLTPATH | cut -d ' ' -f 3`
+GROUP=`ls -ld $VOLTPATH | cut -d ' ' -f 4`
 # Build deployment files (deployment.xml and producer_dr_[en/dis]able.xml
 if ([ -z "$DEPLOY" ] && ([ "$CLUSTER_ID" ] || [ "$K_FACTOR" ] || [ "$SITES_PER_HOST" ] || [ "$DR_LISTEN" ])); then
+  mkdir -p $VOLTPATH/DOCKER/$PREFIX
   if [ -z "$SITES_PER_HOST" ]; then SITES_PER_HOST="2"; fi
   if [ -z "$K_FACTOR" ]; then K_FACTOR="0"; fi
   if [ -z "$DR_LISTEN" ]; then DR_LISTEN="false"; fi
@@ -28,7 +32,7 @@ if ([ -z "$DEPLOY" ] && ([ "$CLUSTER_ID" ] || [ "$K_FACTOR" ] || [ "$SITES_PER_H
     DR_LISTEN="false"
     echo '<deployment><cluster hostcount="'$HOSTCOUNT'" sitesperhost="'$SITES_PER_HOST'" kfactor="'$K_FACTOR'" schema="'$SCHEMA'"/>'$DISABLEPD'<httpd enabled="true"><jsonapi enabled="true"/></httpd><dr id="'$CLUSTER_ID'" listen="'$DR_LISTEN'">'$DR_SOURCE'</dr></deployment>' > $VOLTPATH/DOCKER/$PREFIX/producer_dr_disable.xml
   fi
-  DEPLOY="${VOLTPATH}/DOCKER/${PREFIX}/deployment.xml"
+  DEPLOY="DOCKER/${PREFIX}/deployment.xml"
 else
 : ${DEPLOY?"Need to set DEPLOY"}
 fi
@@ -71,21 +75,17 @@ LEADER_NAME=$NAME
 fi
 # Create docker volumes for this server
 if [ $VOLT_ACTION == "create" ]; then
-  sudo rm -r $VOLTPATH/DOCKER/$PREFIX/$NAME/log/
-  sudo rm -r $VOLTPATH/DOCKER/$PREFIX/$NAME/voltdbroot/
-  sudo mkdir $VOLTPATH/DOCKER/$PREFIX/$NAME/log/
-  sudo mkdir $VOLTPATH/DOCKER/$PREFIX/$NAME/voltdbroot/ 
-  sudo chmod 777 $VOLTPATH/DOCKER/$PREFIX/$NAME/log/
-  sudo chmod 777 $VOLTPATH/DOCKER/$PREFIX/$NAME/voltdbroot/
+  rm -r $VOLTPATH/DOCKER/$PREFIX/$NAME/log/
+  rm -r $VOLTPATH/DOCKER/$PREFIX/$NAME/voltdbroot/
+  mkdir -p $VOLTPATH/DOCKER/$PREFIX/$NAME/log/
+  mkdir -p $VOLTPATH/DOCKER/$PREFIX/$NAME/voltdbroot/ 
   # Provide a share directory that all servers have visibility to
   if [ ! -d "$VOLTPATH/DOCKER/SHARE" ]; then
-    sudo mkdir $VOLTPATH/DOCKER/SHARE/
-    sudo chmod 777 $VOLTPATH/DOCKER/SHARE/
+    mkdir -p $VOLTPATH/DOCKER/SHARE/
   fi
   # Provide a server local directory that all other servers have visibility to
   if [ ! -d "$VOLTPATH/DOCKER/SHARE/$NAME" ]; then
-    sudo mkdir $VOLTPATH/DOCKER/SHARE/$NAME/
-    sudo chmod 777 $VOLTPATH/DOCKER/SHARE/$NAME/
+    mkdir -p $VOLTPATH/DOCKER/SHARE/$NAME/
   fi
 fi
 LINK_ARG=""
@@ -96,7 +96,8 @@ LINK_ARG="$LINK_ARG --link $l:$l"
 done
 # Start docker
 docker run -d -P -h $NAME $LINK_ARG $DOCKER_ENV -v $VOLTPATH:/opt/voltdb -v $VOLTPATH/DOCKER/$PREFIX/$NAME:/tmp/voltdbroot -v $VOLTPATH/DOCKER/SHARE:/tmp/share -v $VOLTPATH/DOCKER/SHARE/$NAME:/tmp/sharelocal --name $NAME nshi/voltdb-cluster \
-sh -c "cd /tmp/voltdbroot;voltdb $VOLT_ACTION $CATALOG_OPTION -H $LEADER_NAME -l /opt/voltdb/voltdb/license.xml -d /opt/voltdb/$DEPLOY $VOLT_ARGS"
+sh -c "groupadd $GROUP;useradd $USER -m -g $GROUP;chown -R $USER:$GROUP /opt /tmp /home/$USER;
+echo 'export PATH=\$PATH:/opt/voltdb/bin;cd /tmp/voltdbroot;voltdb $VOLT_ACTION $CATALOG_OPTION -H $LEADER_NAME -l /opt/voltdb/voltdb/license.xml -d /opt/voltdb/$DEPLOY $VOLT_ARGS' | su - $USER;"
 echo
 echo "IP of $NAME:" `docker inspect --format='{{.NetworkSettings.IPAddress}}' $(docker ps -a | grep -e "\s$NAME" | awk '{ print $1 }')`
 echo "Ports:" `docker port "$NAME" 21212` "(client)" `docker port "$NAME" 8080` "(HTTP)"
