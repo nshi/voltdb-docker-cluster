@@ -9,7 +9,12 @@ EXPOSE 3021 4560 9090
 
 # Set up environment
 RUN apt-get update
-RUN apt-get install -y --no-install-recommends --no-install-suggests procps python vim openjdk-7-jdk
+RUN apt-get -y --no-install-recommends --no-install-suggests install software-properties-common
+RUN add-apt-repository ppa:webupd8team/java
+RUN apt-get update
+RUN echo oracle-java8-installer shared/accepted-oracle-license-v1-1 select true | sudo /usr/bin/debconf-set-selections
+RUN apt-get install -y --no-install-recommends --no-install-suggests oracle-java8-installer
+RUN apt-get install -y --no-install-recommends --no-install-suggests procps python vim
 RUN locale-gen en_US.UTF-8
 
 # Set VoltDB environment variables

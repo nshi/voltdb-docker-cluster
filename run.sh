@@ -17,15 +17,15 @@ if ([ -z "$DEPLOY" ] && ([ "$CLUSTER_ID" ] || [ "$K_FACTOR" ] || [ "$SITES_PER_H
   if [ -z "$DR_LISTEN" ]; then DR_LISTEN="false"; fi
   if [ -z "$DR_PRODUCER_HOST" ]; then
     if [ -z "$CLUSTER_ID" ]; then CLUSTER_ID="1"; fi
-    DR_SOURCE=""
+    DR_SOURCE=""; DR_LISTEN="true"
   else
     if [ -z "$CLUSTER_ID" ]; then CLUSTER_ID="2"; fi
     DR_SOURCE='<connection source="'$DR_PRODUCER_HOST'"/>'; DR_LISTEN="false"
   fi
-  if ( HOSTCOUNT=="2" ); then DISABLEPD='<partition-detection enabled="false"/>'; else DISABLEPD=''; fi
+  if [ $HOSTCOUNT == "2" ]; then DISABLEPD='<partition-detection enabled="false"/>'; else DISABLEPD=''; fi
   if ([ -z "$CATALOG" ]); then SCHEMA="ddl"; else SCHEMA="catalog"; fi
   echo '<deployment><cluster hostcount="'$HOSTCOUNT'" sitesperhost="'$SITES_PER_HOST'" kfactor="'$K_FACTOR'" schema="'$SCHEMA'"/>'$DISABLEPD'<httpd enabled="true"><jsonapi enabled="true"/></httpd><dr id="'$CLUSTER_ID'" listen="'$DR_LISTEN'">'$DR_SOURCE'</dr></deployment>' > $VOLTPATH/DOCKER/$PREFIX/deployment.xml
-  if [ DR_LISTEN=='false' ]; then
+  if [ $DR_LISTEN == 'false' ]; then
     DR_LISTEN="true"
     echo '<deployment><cluster hostcount="'$HOSTCOUNT'" sitesperhost="'$SITES_PER_HOST'" kfactor="'$K_FACTOR'" schema="'$SCHEMA'"/>'$DISABLEPD'<httpd enabled="true"><jsonapi enabled="true"/></httpd><dr id="'$CLUSTER_ID'" listen="'$DR_LISTEN'">'$DR_SOURCE'</dr></deployment>' > $VOLTPATH/DOCKER/$PREFIX/producer_dr_enable.xml
   else
@@ -43,10 +43,11 @@ else
   CATALOG_OPTION="/opt/voltdb/${VOLTPATH}/DOCKER/${PREFIX}/${CATALOG}"
 fi
 stop $PREFIX
+if [ $REPLICA == "true" ]; then REPLICA="--replica"; fi
 echo "Starting VoltDB servers"
-NAME="${PREFIX}1" LINKS="" startone
+NAME="${PREFIX}1" NETWORK="${NETWORK}" REPLICA="${REPLICA}" startone
 for i in `seq 2 $HOSTCOUNT`; do
-NAME="$PREFIX$i" LEADER_NAME="${PREFIX}1" LINKS="${PREFIX}1" startone
+NAME="$PREFIX$i" LEADER_NAME="${PREFIX}1" NETWORK="${NETWORK}" REPLICA="${REPLICA}" startone
 done
 #Todo: figure out when the producer cluster is stable ( public listen ports are opened early by docker :( )
 #if [ -z "$DR_PRODUCER" ]; then
@@ -88,16 +89,12 @@ if [ $VOLT_ACTION == "create" ]; then
     mkdir -p $VOLTPATH/DOCKER/SHARE/$NAME/
   fi
 fi
-LINK_ARG=""
-IFS=' ' read -a links <<< "$LINKS"
-for l in "${links[@]}"
-do
-LINK_ARG="$LINK_ARG --link $l:$l"
-done
+
 # Start docker
-docker run -d -P -h $NAME $LINK_ARG $DOCKER_ENV -v $VOLTPATH:/opt/voltdb -v $VOLTPATH/DOCKER/$PREFIX/$NAME:/tmp/voltdbroot -v $VOLTPATH/DOCKER/SHARE:/tmp/share -v $VOLTPATH/DOCKER/SHARE/$NAME:/tmp/sharelocal --name $NAME nshi/voltdb-cluster \
+docker run -d -P -h $NAME --name $NAME --net=$NETWORK \
+-v $VOLTPATH:/opt/voltdb -v $VOLTPATH/DOCKER/$PREFIX/$NAME:/tmp/voltdbroot -v $VOLTPATH/DOCKER/SHARE:/tmp/share -v $VOLTPATH/DOCKER/SHARE/$NAME:/tmp/sharelocal nshi/voltdb-cluster \
 sh -c "groupadd $GROUP;useradd $USER -m -g $GROUP;chown -R $USER:$GROUP /opt /tmp /home/$USER;
-echo 'export PATH=\$PATH:/opt/voltdb/bin;cd /tmp/voltdbroot;voltdb $VOLT_ACTION $CATALOG_OPTION -H $LEADER_NAME -l /opt/voltdb/voltdb/license.xml -d /opt/voltdb/$DEPLOY $VOLT_ARGS' | su - $USER;"
+echo 'export PATH=\$PATH:/opt/voltdb/bin;cd /tmp/voltdbroot;voltdb $VOLT_ACTION $CATALOG_OPTION $REPLICA -H $LEADER_NAME -l /opt/voltdb/voltdb/license.xml -d /opt/voltdb/$DEPLOY $VOLT_ARGS' | su - $USER;"
 echo
 echo "IP of $NAME:" `docker inspect --format='{{.NetworkSettings.IPAddress}}' $(docker ps -a | grep -e "\s$NAME" | awk '{ print $1 }')`
 echo "Ports:" `docker port "$NAME" 21212` "(client)" `docker port "$NAME" 8080` "(HTTP)"
