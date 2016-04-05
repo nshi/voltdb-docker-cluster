@@ -16,9 +16,19 @@ To build the image, use the following command
 docker build --force-rm=true -t voltdb-image .
 ```
 
+Before starting cluster(s), create a docker bridge network for containers to attach to so that they can access each other
+```bash
+docker network create <name of docker bridge network>
+```
+
 To start a cluster, use the following command
 ```bash
-PREFIX="boston" HOSTCOUNT="2" SITES_PER_HOST="2" VOLTPATH=<path of VOLTDB package> ./run.sh start
+PREFIX="boston" HOSTCOUNT="2" SITES_PER_HOST="2" NETWORK=<name of docker bridge network> VOLTPATH=<path of VOLTDB package> ./run.sh start
+```
+
+To start a replica cluster, just add a parameter to the command above
+```bash
+REPLICA="true"
 ```
 
 To issue commands to a particular host when it is running, use the following command
