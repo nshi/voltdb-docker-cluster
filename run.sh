@@ -7,8 +7,8 @@ function start() {
 : ${VOLTPATH?"Need to set VOLTPATH"}
 : ${HOSTCOUNT?"Need to set HOSTCOUNT"}
 # Get user and group of VOLTPATH
-USER=`ls -ld $VOLTPATH | cut -d ' ' -f 3`
-GROUP=`ls -ld $VOLTPATH | cut -d ' ' -f 4`
+USER=`ls -ld $VOLTPATH | tr -s ' ' | cut -d ' ' -f 3`
+GROUP=`ls -ld $VOLTPATH | tr -s ' ' | cut -d ' ' -f 4`
 # Build deployment files (deployment.xml and producer_dr_[en/dis]able.xml
 if ([ -z "$DEPLOY" ] && ([ "$CLUSTER_ID" ] || [ "$K_FACTOR" ] || [ "$SITES_PER_HOST" ] || [ "$DR_LISTEN" ])); then
   mkdir -p $VOLTPATH/DOCKER/$PREFIX
