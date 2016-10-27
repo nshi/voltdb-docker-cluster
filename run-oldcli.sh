@@ -110,7 +110,7 @@ fi
 docker run -d -P -h $NAME --name $NAME --net=$NETWORK \
 -v $VOLTPATH:/opt/voltdb -v $VOLTPATH/DOCKER/$PREFIX/$NAME:/tmp/voltdbroot -v $VOLTPATH/DOCKER/SHARE:/tmp/share -v $VOLTPATH/DOCKER/SHARE/$NAME:/tmp/sharelocal voltdb-image-1604 \
 sh -c "groupadd $GROUP;useradd $USER -m -g $GROUP;chown -R $USER:$GROUP /opt /tmp /home/$USER;
-echo 'export PATH=\$PATH:/opt/voltdb/bin;cd /tmp/voltdbroot;voltdb init -C /opt/voltdb/$DEPLOY;voltdb start $REPLICA -H $LEADER_NAME -l /opt/voltdb/voltdb/license.xml -c $HOSTCOUNT $VOLT_ARGS' | exec su - $USER;while true; do sleep 300; done"
+echo 'export PATH=\$PATH:/opt/voltdb/bin;cd /tmp/voltdbroot;voltdb $VOLT_ACTION $CATALOG_OPTION $REPLICA -H $LEADER_NAME -l /opt/voltdb/voltdb/license.xml -d /opt/voltdb/$DEPLOY $VOLT_ARGS' | exec su - $USER;while true; do sleep 300; done"
 echo
 echo "IP of $NAME:" `docker inspect --format='{{.NetworkSettings.IPAddress}}' $(docker ps -a | grep -e "\s$NAME" | awk '{ print $1 }')`
 echo "Ports:" `docker port "$NAME" 21212` "(client)" `docker port "$NAME" 8080` "(HTTP)"
